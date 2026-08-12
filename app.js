@@ -3,23 +3,17 @@
 // ==========================================
 
 const DROPBOX_CLIENT_ID = "emh6s5d1fo5g22e";
-const DROPBOX_REFRESH_TOKEN = "sl.u.AGrtroZP_j-seN7afZNGiAkvSq4uRimXJbQsT1MZ5O-iPLw4NmFPJOByKbR_hnh3zzD030lrLgFE_JuF6Rm2SKAoNba26X7-m0WvaC-0c79844pU7PYB4F7iVdIV_swmgRWupfWFtxrTx8CDvjilKNHglz5A86zstXn-L8zYU6DcGyKrAD4501TXfGAe-_98oVPJilzPbwo0QImB9zsQ63p0HpvoC0aQkDORY4-NU_0iK3UYR5XW5o2Ga0LYX9KEkJgZw3idFYnDcR3d35GBB3o9dx0RVnscSP3OjHABsJb88Q_W5XZjtHi4caHFJ9Q0Nyw4cd_Nw7uvAhObCPIIngXjOe9pP7Pe9vPDNgPJTnEA6REvhDgOvOqiSuejb4aRJ7YWMbq2GKUr6fzXqgMeI2yqnlrDoMb-cabrJRjzLGAcghtxo07JkZnjwKTi6Dq_n1mWyOHhMYITdwhJTBF5ZDSUx023BxFubKOBchtKf9lHBe4yxWHxg1P2oLb5_80HbTd0yOUj6RQrRPyRXPkJbZ9gEJtMBm45g8O4OLYq9kQbv5GIBPnlmU2Sgrc-9BzFnzBHXnOmlBBRIRb1iLb2CLtNsIPgXaSXvxERB43XCokdvPxVXEY4AzyUV1gY_m3u7xTWXLgsUtH1zj3XSpIjk6hdk03yYO5bTAeMLxB9BHLcgLQ0LZdbA_hxA_NqdVQ4v_CqeAt-lo1Z35gf8rl0m47gib-k9tD-v2SMmbU7R-1jjRASZ5Qk6rK8c95Ov4bM_TLapuhhhbDin4Vqx7hifPK95U7-vYO7f-UDTWYOQ3eFu39DS8X6o_ncDSVpMhGvBd5Sd06p2lNdmFxEePWO6XuwPbsSUnXtawiVm0aX72yJS3vN7PJfciLg1s-SWSAOJvEVf4tcWT3Ur30da7pkmmEAxalC_s3UUMp3mPuCZpm_IM_Y-g-CMOxhjnnGQBWefK6eC_htpXC0Yr01ZqwYAoK8xBPKC13G-KrIkENE9WY1Jm9v1uy1pXKI5W7G_2gP8TB672_9mV8ni6sQ33lfda5eeUtIKricuAEoXT3vWKMtEprzzNVeC-_RC7OoSKcThmo_CmKT1SfXAb4OkmA62HBf7Por4zWw_gO93pfrWzZhOXZWskDfaYD2gmeIIsOH2Xcp05ckyCu31wpPVlWLhmg9jJIl5gv358TCFUZQqol-QUlzaP98PxxBZH3J7nr7tvAd-tbK99YeTo7fPP4-l0AfI3DZYXhgXdX3HBNib1F3znsJaZouVEXS2wnfMUB7pRFCMgeDrvzyzHoitIR8DeZtB8d6D_kxXfJolKZPl7Z4jsjd1BNAimNKIAxIKGIVyAd7ad1sZWa_SlraCasltS6XcdoDs8b-KZJLmJM8BXbfH_riwWqKOE-D7y_CNuwbAnnxaEWkheP8Q7E6lWDAtSQJDBxQrFwNnwMinlYQJnX0aA";
-const DROPBOX_CLIENT_SECRET = "zvefsh2quh956bv"; // Optional if Public App
+// Note: Client secret is omitted in public client-side PKCE OAuth flow for security.
+const REDIRECT_URI = window.location.origin + window.location.pathname; 
 
-// Fallback short-lived token (if refresh token not used)
-let DROPBOX_ACCESS_TOKEN = "YOUR_DROPBOX_ACCESS_TOKEN_HERE";
+// Dynamic Token State
+let DROPBOX_ACCESS_TOKEN = sessionStorage.getItem("emh6s5d1fo5g22e") || "zvefsh2quh956bv";
 
 // Multi-Document Manifest
 const DOCUMENTS_MANIFEST = [
     {
         title: "example",
         url: "./documents/example.csv"
-    }
-    {
-        title: "guadalupe_example",
-        url: "https://www.dropbox.com/scl/fi/syvetvr94xw6mfkg8i353/segmentation-Sheet1.csv?rlkey=vfefakigx8ajt7ccyuyoa5nln&dl=1"
-    // Add additional treaty documents here:
-    // { title: "treaty_bilateral_2024", url: "https://www.dropbox.com/..." 
     }
 ];
 
@@ -105,7 +99,7 @@ let cuts = new Set();
 let referenceData = null; // Coder 1 baseline record
 
 // ==========================================
-// DROPBOX HELPERS & TOKEN REFRESH
+// DROPBOX HELPERS & PKCE OAUTH AUTHENTICATION
 // ==========================================
 
 function escapeCSV(val) {
@@ -114,94 +108,103 @@ function escapeCSV(val) {
     return `"${str}"`;
 }
 
-// Automatically fetch new access token using Refresh Token
+// Handles URL hash checking for OAuth token redirects & initiates re-auth if missing
 async function ensureValidAccessToken() {
-    if (!DROPBOX_REFRESH_TOKEN || DROPBOX_REFRESH_TOKEN === "YOUR_DROPBOX_REFRESH_TOKEN") {
-        return; // Use static DROPBOX_ACCESS_TOKEN
+    // 1. Check if returning from Dropbox OAuth implicit flow redirect
+    if (window.location.hash) {
+        const params = new URLSearchParams(window.location.hash.substring(1));
+        const token = params.get("access_token");
+        if (token) {
+            DROPBOX_ACCESS_TOKEN = token;
+            sessionStorage.setItem("dropbox_access_token", token);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+        }
     }
 
-    try {
-        const bodyParams = new URLSearchParams({
-            grant_type: "refresh_token",
-            refresh_token: DROPBOX_REFRESH_TOKEN,
-            client_id: DROPBOX_CLIENT_ID
-        });
-
-        if (DROPBOX_CLIENT_SECRET && DROPBOX_CLIENT_SECRET !== "YOUR_DROPBOX_APP_SECRET") {
-            bodyParams.append("client_secret", DROPBOX_CLIENT_SECRET);
-        }
-
-        const response = await fetch("https://api.dropbox.com/oauth2/token", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: bodyParams
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            DROPBOX_ACCESS_TOKEN = data.access_token;
-        }
-    } catch (e) {
-        console.warn("Could not refresh token, falling back to static access token.", e);
+    // 2. Validate token availability
+    if (!DROPBOX_ACCESS_TOKEN || DROPBOX_ACCESS_TOKEN === "YOUR_DROPBOX_ACCESS_TOKEN_HERE") {
+        redirectToDropboxOAuth();
     }
 }
 
+function redirectToDropboxOAuth() {
+    const authUrl = `https://www.dropbox.com/oauth2/authorize?response_type=token&client_id=${encodeURIComponent(DROPBOX_CLIENT_ID)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+    window.location.href = authUrl;
+}
+
+function safeDropboxArg(obj) {
+    return JSON.stringify(obj).replace(/[\u007f-\uffff]/g, function(c) {
+        return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+    });
+}
+
 async function fetchDropboxFile(path) {
-    await ensureValidAccessToken();
     try {
+        await ensureValidAccessToken();
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
         const response = await fetch("https://content.dropboxapi.com/2/files/download", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${DROPBOX_ACCESS_TOKEN}`,
-                "Dropbox-API-Arg": JSON.stringify({ path: path })
+                "Dropbox-API-Arg": safeDropboxArg({ path: cleanPath })
             }
         });
-        if (response.ok) return await response.text();
-        return null;
+
+        if (response.status === 401) {
+            // Token expired or invalid
+            sessionStorage.removeItem("dropbox_access_token");
+            redirectToDropboxOAuth();
+            return null;
+        }
+
+        if (response.ok) {
+            return await response.text();
+        } else {
+            console.warn(`Dropbox file ${cleanPath} not found or empty (HTTP ${response.status}).`);
+            return null; 
+        }
     } catch (err) {
-        console.warn(`File ${path} not found on Dropbox.`, err);
+        console.warn(`Could not read Dropbox file at ${path}:`, err);
         return null;
     }
 }
 
-async function saveDropboxFile(path, content, contentType = "application/octet-stream") {
+async function saveDropboxFile(path, content, contentType = "application/json") {
     await ensureValidAccessToken();
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+    const apiArg = {
+        path: cleanPath,
+        mode: "overwrite",
+        autorename: false,
+        mute: false
+    };
+
     const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
         method: "POST",
         headers: {
             "Authorization": `Bearer ${DROPBOX_ACCESS_TOKEN}`,
-            "Dropbox-API-Arg": JSON.stringify({
-                path: path,
-                mode: "overwrite",
-                autorename: false,
-                mute: false
-            }),
-            "Content-Type": contentType
+            "Dropbox-API-Arg": safeDropboxArg(apiArg),
+            "Content-Type": "application/octet-stream"
         },
         body: content
     });
 
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Dropbox upload failed: ${errText}`);
+    if (response.status === 401) {
+        sessionStorage.removeItem("dropbox_access_token");
+        redirectToDropboxOAuth();
+        throw new Error("Dropbox Session Expired. Redirecting to login...");
     }
-    return await response.json();
-}
 
-async function loadReferenceData() {
-    referenceData = null;
-    const jsonText = await fetchDropboxFile(DROPBOX_REFERENCE_CUTS_PATH);
-    if (jsonText) {
-        try {
-            const allRefData = JSON.parse(jsonText);
-            if (allRefData[CURRENT_DOCUMENT.title]) {
-                referenceData = allRefData[CURRENT_DOCUMENT.title];
-                console.log("Loaded reference baseline for:", CURRENT_DOCUMENT.title, referenceData);
-            }
-        } catch (e) {
-            console.error("Error parsing reference cuts JSON:", e);
-        }
+    if (!response.ok) {
+        const errorDetails = await response.text();
+        console.error("Dropbox API Error Details:", errorDetails);
+        throw new Error(`Dropbox upload failed (${response.status}): ${errorDetails}`);
     }
+
+    return await response.json();
 }
 
 // ==========================================
@@ -223,6 +226,75 @@ function initDocumentSelector() {
     });
 }
 
+async function loadReferenceData() {
+    referenceData = null;
+    try {
+        const jsonText = await fetchDropboxFile(DROPBOX_REFERENCE_CUTS_PATH);
+        if (jsonText) {
+            const allRefData = JSON.parse(jsonText);
+            if (allRefData[CURRENT_DOCUMENT.title]) {
+                referenceData = allRefData[CURRENT_DOCUMENT.title];
+                console.log("Loaded reference baseline for:", CURRENT_DOCUMENT.title, referenceData);
+            }
+        }
+    } catch (e) {
+        console.warn("Could not load reference data from Dropbox, continuing as Coder 1.", e);
+    }
+}
+
+async function loadDocumentData() {
+    outputConsole.innerText = `Loading "${CURRENT_DOCUMENT.title}"...`;
+    outputConsole.style.color = "#3b82f6";
+    reconcileContainer.style.display = "none";
+
+    // Load local cuts
+    cuts.clear();
+    const saved = localStorage.getItem(`cuts_${CURRENT_DOCUMENT.title}`);
+    if (saved) {
+        cuts = new Set(JSON.parse(saved));
+    }
+
+    try {
+        await loadReferenceData();
+
+        const response = await fetch(CURRENT_DOCUMENT.url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: Failed to fetch file at ${CURRENT_DOCUMENT.url}`);
+        }
+        
+        const csvData = await response.text();
+        if (!csvData.trim()) {
+            throw new Error("CSV file appears to be empty.");
+        }
+
+        const lines = csvData.replace(/\r/g, '').split('\n').filter(line => line.trim() !== '');
+        const targetLine = lines.length > 1 ? lines[1] : lines[0];
+        const rowData = parseCSVRow(targetLine);
+        
+        const documentText = rowData[1] !== undefined ? rowData[1] : (rowData[0] || "");
+        wordsArray = documentText.split(/\s+/).filter(word => word.length > 0);
+
+        if (wordsArray.length === 0) {
+            throw new Error("No words found in document text column.");
+        }
+
+        if (referenceData) {
+            outputConsole.innerText = `Loaded "${CURRENT_DOCUMENT.title}". Baseline exists from [${referenceData.coder}].`;
+            outputConsole.style.color = "#22c55e";
+        } else {
+            outputConsole.innerText = `Loaded "${CURRENT_DOCUMENT.title}". You are Coder 1 for this document.`;
+            outputConsole.style.color = "#eab308";
+        }
+        
+        renderText();
+
+    } catch (error) {
+        console.error("Error loading document:", error);
+        outputConsole.innerText = `Error: ${error.message}`;
+        outputConsole.style.color = "#ef4444";
+    }
+}
+
 function parseCSVRow(csvText) {
     let result = [];
     let insideQuote = false;
@@ -241,49 +313,6 @@ function parseCSVRow(csvText) {
     }
     result.push(entry.trim());
     return result;
-}
-
-async function loadDocumentData() {
-    outputConsole.innerText = `Loading "${CURRENT_DOCUMENT.title}"...`;
-    outputConsole.style.color = "#3b82f6";
-    reconcileContainer.style.display = "none";
-
-    // Load cuts from LocalStorage per document
-    cuts.clear();
-    const saved = localStorage.getItem(`cuts_${CURRENT_DOCUMENT.title}`);
-    if (saved) {
-        cuts = new Set(JSON.parse(saved));
-    }
-
-    try {
-        await loadReferenceData();
-
-        const response = await fetch(CURRENT_DOCUMENT.url);
-        if (!response.ok) throw new Error("Failed to load document text.");
-        
-        const csvData = await response.text();
-        const lines = csvData.split('\n');
-        
-        if (lines.length > 1) {
-            const rowData = parseCSVRow(lines[1]);
-            const documentText = rowData[1] || rowData[0] || "";
-            
-            wordsArray = documentText.split(/\s+/).filter(word => word.length > 0);
-
-            if (referenceData) {
-                outputConsole.innerText = `Loaded "${CURRENT_DOCUMENT.title}". Baseline exists from [${referenceData.coder}].`;
-                outputConsole.style.color = "#22c55e";
-            } else {
-                outputConsole.innerText = `Loaded "${CURRENT_DOCUMENT.title}". You are Coder 1 for this document.`;
-                outputConsole.style.color = "#eab308";
-            }
-            renderText();
-        }
-    } catch (error) {
-        console.error(error);
-        outputConsole.innerText = "Error loading document data. Check URL/Console.";
-        outputConsole.style.color = "#ef4444";
-    }
 }
 
 function toggleCut(index) {
@@ -336,7 +365,15 @@ exportBtn.addEventListener('click', async () => {
 
         try {
             const jsonText = await fetchDropboxFile(DROPBOX_REFERENCE_CUTS_PATH);
-            let refStore = jsonText ? JSON.parse(jsonText) : {};
+            let refStore = {};
+
+            if (jsonText) {
+                try {
+                    refStore = JSON.parse(jsonText);
+                } catch (parseErr) {
+                    console.warn("Could not parse existing reference JSON, initializing new baseline store.", parseErr);
+                }
+            }
             
             refStore[CURRENT_DOCUMENT.title] = {
                 coder: CURRENT_USER,
@@ -345,40 +382,44 @@ exportBtn.addEventListener('click', async () => {
                 annotations: []
             };
 
-            await saveDropboxFile(DROPBOX_REFERENCE_CUTS_PATH, JSON.stringify(refStore, null, 2), "application/json");
-            referenceData = refStore[CURRENT_DOCUMENT.title];
+            await saveDropboxFile(DROPBOX_REFERENCE_CUTS_PATH, JSON.stringify(refStore, null, 2));
             
+            referenceData = refStore[CURRENT_DOCUMENT.title];
+            outputConsole.innerText = "Baseline cuts saved successfully to Dropbox!";
+            outputConsole.style.color = "#22c55e";
             alert("Baseline cuts saved! Waiting for second coder review.");
+
         } catch (err) {
-            console.error("Failed to save baseline cuts:", err);
-            outputConsole.innerText = "Error saving baseline cuts to Dropbox.";
+            console.error("Detailed error saving baseline cuts:", err);
+            outputConsole.innerText = `Error saving baseline cuts to Dropbox: ${err.message}`;
             outputConsole.style.color = "#ef4444";
         }
         return;
     }
 
-    // CODER 2 BOUNDARY ICR SCORE (Jaccard Index)
-    const baselineCuts = referenceData.cuts;
-    const sharedCuts = coderACuts.filter(cut => baselineCuts.includes(cut));
-    const unionCuts = new Set([...coderACuts, ...baselineCuts]);
+    // CODER 2 EVALUATION & RECONCILIATION
+    const coderBCuts = referenceData.cuts || [];
+    buildReconciliationView(coderACuts, coderBCuts);
     
-    const jaccardScore = (sharedCuts.length / unionCuts.size) * 100;
+    // Calculate Boundary Agreement (Window-based Boundary P/R/F1)
+    const setA = new Set(coderACuts);
+    const setB = new Set(coderBCuts);
+    
+    let exactMatches = 0;
+    setA.forEach(c => { if (setB.has(c)) exactMatches++; });
+    
+    const precision = setA.size > 0 ? (exactMatches / setA.size) : 0;
+    const recall = setB.size > 0 ? (exactMatches / setB.size) : 0;
+    const f1 = (precision + recall) > 0 ? (2 * precision * recall) / (precision + recall) : 0;
 
-    let consoleMessage = `Boundary Agreement (Jaccard Index): ${jaccardScore.toFixed(1)}%\n`;
-    consoleMessage += `Your Cuts: [${coderACuts.join(', ')}]\n`;
-    consoleMessage += `Coder 1 (${referenceData.coder}) Cuts: [${baselineCuts.join(', ')}]`;
-
-    if (jaccardScore >= 80) {
-        outputConsole.style.color = "#22c55e"; 
-        outputConsole.innerText = `PASS - HIGH BOUNDARY AGREEMENT!\n${consoleMessage}`;
-    } else {
-        outputConsole.style.color = "#ef4444"; 
-        outputConsole.innerText = `RECONCILIATION REQUIRED (<80% Agreement)\n${consoleMessage}`;
-        buildReconciliationView(coderACuts, baselineCuts);
-    }
+    outputConsole.innerText = `Boundary Agreement Analysis vs Baseline [${referenceData.coder}]:\n` +
+        `• Exact Matches: ${exactMatches}\n` +
+        `• Precision: ${(precision * 100).toFixed(1)}%\n` +
+        `• Recall: ${(recall * 100).toFixed(1)}%\n` +
+        `• F1 Boundary Score: ${(f1 * 100).toFixed(1)}%`;
+    outputConsole.style.color = "#38bdf8";
 });
 
-// Category-Level ICR Calculation (Cohen's Kappa Proxy)
 function calculateCategoryICR(coder2Annotations) {
     if (!referenceData || !referenceData.annotations || referenceData.annotations.length === 0) {
         return null;
@@ -404,10 +445,8 @@ function calculateCategoryICR(coder2Annotations) {
         categoryCountsC2[cat2] = (categoryCountsC2[cat2] || 0) + 1;
     }
 
-    // Observed Proportion Agreement (Po)
     const Po = totalObservedMatches / compareLength;
 
-    // Expected Chance Agreement (Pe)
     let Pe = 0;
     const allCategories = new Set([...Object.keys(categoryCountsC1), ...Object.keys(categoryCountsC2)]);
     allCategories.forEach(cat => {
@@ -416,7 +455,6 @@ function calculateCategoryICR(coder2Annotations) {
         Pe += (p1 * p2);
     });
 
-    // Cohen's Kappa Coefficient (k)
     const kappa = Pe === 1 ? 1 : (Po - Pe) / (1 - Pe);
     const percentage = Po * 100;
 
@@ -618,7 +656,6 @@ submitBtn.addEventListener('click', async () => {
         const sortedCuts = Array.from(cuts).sort((a, b) => a - b);
         const codingString = `cut_${sortedCuts.join('_')}`;
 
-        // Save categories to reference Store if Coder 1
         if (referenceData && referenceData.coder === CURRENT_USER) {
             const jsonText = await fetchDropboxFile(DROPBOX_REFERENCE_CUTS_PATH);
             let refStore = jsonText ? JSON.parse(jsonText) : {};
@@ -631,14 +668,12 @@ submitBtn.addEventListener('click', async () => {
             await saveDropboxFile(DROPBOX_REFERENCE_CUTS_PATH, JSON.stringify(refStore, null, 2), "application/json");
         }
 
-        // Calculate Category ICR if Coder 2
         let categoryIcrMsg = "";
         const catResults = calculateCategoryICR(chosenCategories);
         if (catResults) {
             categoryIcrMsg = `\nCategory Agreement: ${catResults.percentage}% (Cohen's Kappa: ${catResults.kappa})`;
         }
 
-        // Save CSV TSV Rows
         const headers = ["timestamp", "segid", "user", "coding", "segment_id", "segment", "annotation_type", "annotation_other", "title", "date"];
         let existingCSV = await fetchDropboxFile(DROPBOX_CSV_SAVE_PATH) || "";
         let csvRows = [];
@@ -685,6 +720,11 @@ submitBtn.addEventListener('click', async () => {
     }
 });
 
-// App Entry Point
-initDocumentSelector();
-loadDocumentData();
+// App Initialization Entrypoint
+async function startApp() {
+    initDocumentSelector();
+    await ensureValidAccessToken();
+    await loadDocumentData();
+}
+
+startApp();

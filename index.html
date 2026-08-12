@@ -3,45 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Treaty Segmentation & ICR Adjudication Tool</title>
+    <title>Treaty Segmentation Tool</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Text Segmentation & Inter-Coder Reliability (ICR)</h1>
-            <p><strong>Instructions:</strong> Select a document, click on any word to set a segment boundary after it, and run ICR grading or submit category annotations.</p>
+            <h1>Text Segmentation: "The Scissors"</h1>
+            <p><strong>Instructions:</strong> Click on any word to drop a segment boundary <em>after</em> that word. Click it again to remove it.</p>
+            
+            <!-- Document Selector Dropdown Added Here -->
+            <div style="margin-top: 15px;">
+                <label for="doc-selector"><strong>Select Document:</strong></label>
+                <select id="doc-selector" style="padding: 6px 12px; margin-left: 8px; border-radius: 4px;"></select>
+            </div>
         </header>
-
-        <!-- Document Selector Bar -->
-        <div style="margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
-            <label for="doc-selector"><strong>Select Document to Code:</strong></label>
-            <select id="doc-selector" style="width: 100%; padding: 8px; margin-top: 5px; font-size: 14px; border-radius: 4px; border: 1px solid #cbd5e1;"></select>
-        </div>
 
         <!-- Document Text Container -->
         <div id="text-container" class="text-box"></div>
 
         <!-- Segmentation Controls -->
         <div class="controls">
-            <button id="export-btn">Grade Cuts (Boundary ICR)</button>
+            <button id="export-btn">Grade Cuts</button>
             <button id="review-btn" style="background-color: #059669;">Review & Annotate</button>
             <button id="clear-btn" style="background-color: #ef4444;">Clear All Cuts</button>
         </div>
 
         <div id="output-console" class="console">
-            Awaiting document selection...
+            Awaiting cuts...
         </div>
 
-        <!-- Disagreement Adjudication Panel (Hidden by Default) -->
-        <div id="reconcile-container" style="display: none; margin-top: 25px; background: #ffffff; padding: 20px; border-radius: 8px; border: 1px solid #cbd5e1;">
-            <h3 style="margin-top:0; color:#b91c1c;">ICR Disagreement Adjudication</h3>
-            <p>Boundaries below do not meet the 80% consensus threshold. Select boundaries to retain in the final consensus model.</p>
+        <!-- Optional Reconciliation UI Container -->
+        <div id="reconcile-container" style="display: none; margin-top: 20px; border: 1px solid #d1d5db; padding: 15px; border-radius: 6px; background-color: #f8fafc;">
+            <h3>Adjudicate Disagreements</h3>
             <div id="reconcile-list"></div>
-            <button id="save-consensus-btn" style="background-color: #2563eb; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Save Reconciled Baseline</button>
+            <button id="save-consensus-btn" style="background-color: #2563eb; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+                Save Consensus Baseline
+            </button>
         </div>
 
-        <!-- Annotation Screen (Hidden by Default) -->
+        <!-- Annotation Screen (Hidden by default) -->
         <div id="annotation-container" style="display: none; margin-top: 20px;">
             <h2>Review & Annotate Segments</h2>
             <div id="segments-list"></div>
