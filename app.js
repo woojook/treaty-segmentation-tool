@@ -1,19 +1,19 @@
-// ==========================================
-// CONFIGURATION & DROPBOX API CREDENTIALS
-// ==========================================
-
+// Configuration & Dropbox API credentials
 const DROPBOX_CLIENT_ID = "emh6s5d1fo5g22e";
-// Note: Client secret is omitted in public client-side PKCE OAuth flow for security.
 const REDIRECT_URI = window.location.origin + window.location.pathname; 
 
-// Dynamic Token State
-let DROPBOX_ACCESS_TOKEN = sessionStorage.getItem("emh6s5d1fo5g22e") || "zvefsh2quh956bv";
+// Dynamic token state (uses consistent storage key)
+let DROPBOX_ACCESS_TOKEN = sessionStorage.getItem("dropbox_access_token") || "";
 
-// Multi-Document Manifest
+// Multi-document manifest
 const DOCUMENTS_MANIFEST = [
     {
-        title: "example",
-        url: "./documents/example.csv"
+        title: "Treaty Document 1",
+        url: "/my_documents/treaty_1.csv"  // Path relative to App root in Dropbox
+    },
+    {
+        title: "Trade Agreement 2024",
+        url: "/my_documents/trade_2024.csv"
     }
 ];
 
@@ -25,10 +25,7 @@ const DROPBOX_RECONCILED_PATH = "/reconciled_consensus.json";
 const CURRENT_USER = "woojo";
 let CURRENT_DOCUMENT = DOCUMENTS_MANIFEST[0];
 
-// ==========================================
-// CONSTANTS & TAXONOMY
-// ==========================================
-
+// Constants & taxonomy
 const annotationTypes = [
     "Select a category...",
     "Motivation/Preamble",
@@ -71,10 +68,7 @@ const problemsEncountered = [
     "Other"
 ];
 
-// ==========================================
-// DOM ELEMENTS
-// ==========================================
-
+// DOM elements
 const docSelector = document.getElementById('doc-selector');
 const textContainer = document.getElementById('text-container');
 const exportBtn = document.getElementById('export-btn');
@@ -90,27 +84,25 @@ const reconcileContainer = document.getElementById('reconcile-container');
 const reconcileList = document.getElementById('reconcile-list');
 const saveConsensusBtn = document.getElementById('save-consensus-btn');
 
-// ==========================================
-// STATE MANAGEMENT
-// ==========================================
-
+// State management
 let wordsArray = [];
 let cuts = new Set();
 let referenceData = null; // Coder 1 baseline record
 
-// ==========================================
-// DROPBOX HELPERS & PKCE OAUTH AUTHENTICATION
-// ==========================================
+// Dropbox helpers & OAuth authentication
 
-function escapeCSV(val) {
+// Tab-separated export cell sanitizer
+function sanitizeTSVCell(val) {
     if (val === null || val === undefined) return '""';
-    let str = String(val).replace(/"/g, '""');
+    let str = String(val)
+        .replace(/[\r\n]+/g, ' ')  // Replace raw internal newlines with space
+        .replace(/\t/g, ' ')       // Replace raw internal tabs with space
+        .replace(/"/g, '""');      // Escape double quotes
     return `"${str}"`;
 }
 
 // Handles URL hash checking for OAuth token redirects & initiates re-auth if missing
 async function ensureValidAccessToken() {
-    // 1. Check if returning from Dropbox OAuth implicit flow redirect
     if (window.location.hash) {
         const params = new URLSearchParams(window.location.hash.substring(1));
         const token = params.get("access_token");
@@ -122,8 +114,7 @@ async function ensureValidAccessToken() {
         }
     }
 
-    // 2. Validate token availability
-    if (!DROPBOX_ACCESS_TOKEN || DROPBOX_ACCESS_TOKEN === "YOUR_DROPBOX_ACCESS_TOKEN_HERE") {
+    if (!DROPBOX_ACCESS_TOKEN) {
         redirectToDropboxOAuth();
     }
 }
@@ -153,7 +144,6 @@ async function fetchDropboxFile(path) {
         });
 
         if (response.status === 401) {
-            // Token expired or invalid
             sessionStorage.removeItem("dropbox_access_token");
             redirectToDropboxOAuth();
             return null;
@@ -207,10 +197,7 @@ async function saveDropboxFile(path, content, contentType = "application/json") 
     return await response.json();
 }
 
-// ==========================================
-// INITIALIZATION & DYNAMIC DOCUMENT SWITCHING
-// ==========================================
-
+// Initialization & dynamic document switching
 function initDocumentSelector() {
     docSelector.innerHTML = "";
     DOCUMENTS_MANIFEST.forEach((doc, idx) => {
@@ -223,6 +210,16 @@ function initDocumentSelector() {
     docSelector.addEventListener('change', (e) => {
         CURRENT_DOCUMENT = DOCUMENTS_MANIFEST[e.target.value];
         loadDocumentData();
+    });
+}
+
+function initProblemsDropdown() {
+    problemsDropdown.innerHTML = "";
+    problemsEncountered.forEach(problem => {
+        const option = document.createElement('option');
+        option.value = problem;
+        option.innerText = problem;
+        problemsDropdown.appendChild(option);
     });
 }
 
@@ -246,8 +243,8 @@ async function loadDocumentData() {
     outputConsole.innerText = `Loading "${CURRENT_DOCUMENT.title}"...`;
     outputConsole.style.color = "#3b82f6";
     reconcileContainer.style.display = "none";
+    problemsDropdown.value = problemsEncountered[0];
 
-    // Load local cuts
     cuts.clear();
     const saved = localStorage.getItem(`cuts_${CURRENT_DOCUMENT.title}`);
     if (saved) {
@@ -257,21 +254,20 @@ async function loadDocumentData() {
     try {
         await loadReferenceData();
 
-        const response = await fetch(CURRENT_DOCUMENT.url);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: Failed to fetch file at ${CURRENT_DOCUMENT.url}`);
-        }
-        
-        const csvData = await response.text();
-        if (!csvData.trim()) {
-            throw new Error("CSV file appears to be empty.");
+        // --- FETCH DIRECTLY FROM DROPBOX ---
+        const csvText = await fetchDropboxFile(CURRENT_DOCUMENT.url);
+        if (!csvText || !csvText.trim()) {
+            throw new Error(`Could not load document from Dropbox path: ${CURRENT_DOCUMENT.url}`);
         }
 
-        const lines = csvData.replace(/\r/g, '').split('\n').filter(line => line.trim() !== '');
-        const targetLine = lines.length > 1 ? lines[1] : lines[0];
-        const rowData = parseCSVRow(targetLine);
+        const parsedRows = parseFullCSV(csvText);
+        if (parsedRows.length === 0) {
+            throw new Error("Failed to parse CSV document structure.");
+        }
+
+        const targetRow = parsedRows.length > 1 ? parsedRows[1] : parsedRows[0];
+        const documentText = targetRow[1] !== undefined ? targetRow[1] : (targetRow[0] || "");
         
-        const documentText = rowData[1] !== undefined ? rowData[1] : (rowData[0] || "");
         wordsArray = documentText.split(/\s+/).filter(word => word.length > 0);
 
         if (wordsArray.length === 0) {
@@ -295,24 +291,50 @@ async function loadDocumentData() {
     }
 }
 
-function parseCSVRow(csvText) {
-    let result = [];
-    let insideQuote = false;
-    let entry = '';
-    
-    for (let i = 0; i < csvText.length; i++) {
-        let char = csvText[i];
+// Full state-machine CSV parser for multiline texts
+function parseFullCSV(text) {
+    const rows = [];
+    let currentRow = [];
+    let currentCell = '';
+    let insideQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
         if (char === '"') {
-            insideQuote = !insideQuote;
-        } else if (char === ',' && !insideQuote) {
-            result.push(entry.trim());
-            entry = '';
+            if (insideQuotes && nextChar === '"') {
+                currentCell += '"';
+                i++; // Skip escaped quote
+            } else {
+                insideQuotes = !insideQuotes;
+            }
+        } else if (char === ',' && !insideQuotes) {
+            currentRow.push(currentCell.trim());
+            currentCell = '';
+        } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+            if (char === '\r' && nextChar === '\n') {
+                i++; // Skip \n in \r\n
+            }
+            currentRow.push(currentCell.trim());
+            if (currentRow.some(cell => cell.length > 0)) {
+                rows.push(currentRow);
+            }
+            currentRow = [];
+            currentCell = '';
         } else {
-            entry += char;
+            currentCell += char;
         }
     }
-    result.push(entry.trim());
-    return result;
+
+    if (currentCell.length > 0 || currentRow.length > 0) {
+        currentRow.push(currentCell.trim());
+        if (currentRow.some(cell => cell.length > 0)) {
+            rows.push(currentRow);
+        }
+    }
+
+    return rows;
 }
 
 function toggleCut(index) {
@@ -345,10 +367,7 @@ function renderText() {
     });
 }
 
-// ==========================================
-// ICR CALCULATIONS (BOUNDARY & CATEGORY)
-// ==========================================
-
+// ICR calculations (boundary & category)
 exportBtn.addEventListener('click', async () => {
     const coderACuts = Array.from(cuts).sort((a, b) => a - b);
     
@@ -358,7 +377,7 @@ exportBtn.addEventListener('click', async () => {
         return;
     }
 
-    // CODER 1 INITIAL SAVE
+    // Coder 1 initial save
     if (!referenceData) {
         outputConsole.innerText = "Saving your cuts as document baseline...\nWaiting for Coder 2 review.";
         outputConsole.style.color = "#eab308";
@@ -397,11 +416,11 @@ exportBtn.addEventListener('click', async () => {
         return;
     }
 
-    // CODER 2 EVALUATION & RECONCILIATION
+    // Coder 2 evaluation & reconciliation
     const coderBCuts = referenceData.cuts || [];
     buildReconciliationView(coderACuts, coderBCuts);
     
-    // Calculate Boundary Agreement (Window-based Boundary P/R/F1)
+    // Calculate boundary agreement
     const setA = new Set(coderACuts);
     const setB = new Set(coderBCuts);
     
@@ -465,10 +484,7 @@ function calculateCategoryICR(coder2Annotations) {
     };
 }
 
-// ==========================================
-// RECONCILIATION & ADJUDICATION
-// ==========================================
-
+// Reconciliation & adjudication
 function buildReconciliationView(coderCuts, baseCuts) {
     reconcileContainer.style.display = "block";
     reconcileList.innerHTML = "";
@@ -546,17 +562,7 @@ if (clearBtn) {
     });
 }
 
-problemsEncountered.forEach(problem => {
-    const option = document.createElement('option');
-    option.value = problem;
-    option.innerText = problem;
-    problemsDropdown.appendChild(option);
-});
-
-// ==========================================
-// ANNOTATION VIEW & SUBMISSION
-// ==========================================
-
+// Annotation view & submission
 reviewBtn.addEventListener('click', () => {
     textContainer.style.display = "none";
     reviewBtn.style.display = "none";
@@ -701,7 +707,8 @@ submitBtn.addEventListener('click', async () => {
                 currentDate
             ];
 
-            csvRows.push(rowValues.map(escapeCSV).join("\t"));
+            // Sanitized TSV cell encoding prevents line breaks or split tabs from breaking TSV structure
+            csvRows.push(rowValues.map(sanitizeTSVCell).join("\t"));
         });
 
         await saveDropboxFile(DROPBOX_CSV_SAVE_PATH, csvRows.join("\n"));
@@ -720,9 +727,10 @@ submitBtn.addEventListener('click', async () => {
     }
 });
 
-// App Initialization Entrypoint
+// App initialization entrypoint
 async function startApp() {
     initDocumentSelector();
+    initProblemsDropdown();
     await ensureValidAccessToken();
     await loadDocumentData();
 }
