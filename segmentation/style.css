@@ -1,0 +1,91 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f1f5f9;
+    margin: 0;
+    padding: 20px;
+    color: #1e293b;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+header h1 {
+    margin-top: 0;
+    font-size: 24px;
+    color: #0f172a;
+}
+
+.text-box {
+    line-height: 2.2;
+    font-size: 16px;
+    padding: 20px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fafafa;
+    min-height: 200px;
+    margin-bottom: 20px;
+}
+
+.word {
+    cursor: pointer;
+    padding: 2px 4px;
+    display: inline-block;
+    border-radius: 3px;
+    transition: background-color 0.15s ease;
+}
+
+.word:hover {
+    background-color: #e2e8f0;
+}
+
+/* Cut Marker Style */
+.cut-after {
+    border-right: 3px solid #ef4444;
+    background-color: #fee2e2;
+    padding-right: 6px;
+    margin-right: 4px;
+    font-weight: 600;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+button {
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: white;
+    background-color: #2563eb;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+button:disabled {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+}
+
+.console {
+    background: #0f172a;
+    color: #38bdf8;
+    font-family: monospace;
+    padding: 15px;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    min-height: 50px;
+}
